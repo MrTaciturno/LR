@@ -5,8 +5,8 @@
   <title>Last Resort - Preenchedor de Laudos em Caso de falha do GDL</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="style.css">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/3.0.1/jspdf.umd.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/docx/8.5.0-beta.9/docx.umd.min.js"></script>
+  <script src="https://unpkg.com/docx@7.1.0/build/index.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
   
 
 </head>
@@ -88,7 +88,7 @@
         </div>
       </div>
       
-      <button type="submit" onclick="gerarRelatorio()">Gerar Relatório</button>
+      <button type="submit" onclick="montaLaudo()">Gerar Relatório</button>
     </form>
     <div id="manualReport" class="output" style="display:none;"></div>
   </div>
@@ -100,141 +100,80 @@
     // Docx.js CDN: https://cdnjs.cloudflare.com/ajax/libs/docx/8.5.0-beta.9/docx.umd.min.js
     // Certifique-se que <script src="https://cdnjs.cloudflare.com/ajax/libs/docx/8.5.0-beta.9/docx.umd.min.js"> está incluído no HTML
 
-    function gerarRelatorio() {
-      // Extrai os dados do formulário manual
-      const protocolo = document.getElementById('protocolo').value;
-      const bo = document.getElementById('bo').value;
-      const delegacia = document.getElementById('delegacia').value;
-      const autoridade = document.getElementById('autoridade').value;
-      const envolvidos = document.getElementById('envolvidos').value;
-      const dataSolicitacao = document.getElementById('dataSolicitacao').value;
-      const horaSolicitacao = document.getElementById('horaSolicitacao').value;
-      const dataFato = document.getElementById('dataFato').value;
-      const horaFato = document.getElementById('horaFato').value;
-      const dataAtendimento = document.getElementById('dataAtendimento').value;
-      const horaAtendimento = document.getElementById('horaAtendimento').value;
-      const dataLiberacao = document.getElementById('dataLiberacao').value;
-      const horaLiberacao = document.getElementById('horaLiberacao').value;
 
-      // Helper para data por extenso pt-BR
-      function dataPorExtenso(dt) {
-        if (!dt) return '';
-        const meses = [
-          'janeiro', 'fevereiro', 'março',
-          'abril', 'maio', 'junho',
-          'julho', 'agosto', 'setembro',
-          'outubro', 'novembro', 'dezembro'
-        ];
-        let m = '';
-        let y = '';
-        let d = '';
-        // tenta yyyy-mm-dd ou dd/mm/yyyy
-        if (/^\d{4}-\d{2}-\d{2}$/.test(dt)) {
-          [y, m, d] = dt.split('-');
-        } else if (/^\d{2}\/\d{2}\/\d{4}$/.test(dt)) {
-          [d, m, y] = dt.split('/');
-        } else {
-          return dt;
-        }
-        return `${parseInt(d)} de ${meses[parseInt(m) - 1]} de ${y}`;
-      }
+    function montaLaudo(){
+        let aL = ["data"]; // array de laudo - armazena os textos e o formata {1 - preambulo}
+        let fT = [0];// array de formatação - armazena os tipos de formatação {0 - preambulo}
 
-      // Monta conteúdo para as seções do laudo
-      const laudoNumero = protocolo ? protocolo : '___/____';
-      const origem = [
-        bo ? `BO - ${bo}` : null,
-        // Supondo que o campo "Riesp" não está no formulário, fica vazio. 
-        // Pode adicionar se necessário.
-      ].filter(Boolean).join('; ');
-
-      const docTitle = [
-        {label: "Laudo:", value: laudoNumero},
-        {label: "Protocolo:", value: protocolo ? protocolo : '____'},
-        {label: "Origem:", value: `${origem}${(origem && protocolo ? '; ' : '')}RIESP - _____________________________;`},
-        {label: "Autoridade Requisitante:", value: autoridade ? autoridade : '(não identificado)'},
-        {label: "Nome(s) do(s) Envolvido(s):", value: envolvidos ? envolvidos : '(não identificado)'},
-        {
-          label: "Data do Exame:",
-          value: dataFato ? dataFato.split('-').reverse().join('/') : '(não identificado)'
-        }
-      ];
-
-      // Frase de abertura, conforme solicitado
-      const dataExameExtenso = dataPorExtenso(dataFato);
-      const cidade = 'Americana'; // fixo (pode ajustar)
-      const headTexto =
-        `Aos ${dataExameExtenso ? dataExameExtenso : '___ de ___________ de ____'}, na cidade de ${cidade} e no INSTITUTO DE CRIMINALÍSTICA, da Superintendência da Polícia Técnico-Científica, da Secretaria de Segurança Pública do Estado de São Paulo, de conformidade com o disposto no artigo 178 do Decreto-Lei número 3.689 de 3 de outubro de 1941, pelo Perito Criminal Diretor deste I.C., Dr. Ricardo Lopes Ortega, foi designado(a) o(a) Perito(a) Criminal Leonardo Reis da Silva para proceder ao exame pericial químicotoxicológico, em atendimento a requisição expedida pelo(a) Exmo(a). Sr(a). Delegado(a) do(a) 02º D.P. HORTOLÂNDIA - HORTOLÂNDIA, ${autoridade ? autoridade : '(não identificado)'}.
-`;
-
-
-
-      const { Document, Packer, Paragraph, TextRun } = window.docx;
-
-      // Cria array de Paragraphs para título
-      const paragraphs = [];
-      docTitle.forEach(row => {
-        paragraphs.push(
-          new Paragraph({
-            spacing: { after: 120 },
-            children: [
-              new TextRun({ text: row.label + " ", bold: true }),
-              new TextRun({ text: row.value })
-            ]
-          })
-        );
-      });
-      // Adiciona parágrafo em branco
-      paragraphs.push(new Paragraph(""));
-
-      // Corpo/head/frase de abertura
-      headTexto.split('\n').forEach(line => {
-        if (line.trim().length > 0) {
-          paragraphs.push(
-            new Paragraph({
-              spacing: { after: 100 },
-              children: [ new TextRun({ text: line }) ]
-            })
-          );
-        } else {
-          paragraphs.push(new Paragraph(""));
-        }
-      });
-      // Opcional: mais conteúdo adicional pode ser inserido depois
-
-      // Monta documento
-      const doc = new Document({
-        creator: "Gerador de Laudo",
-        title: "Laudo",
-        description: "Laudo gerado automaticamente",
-        sections: [
-          {
-            properties: {},
-            children: paragraphs
-          }
-        ]
-      });
-
-      // Salva arquivo ao usuário
-      Packer.toBlob(doc).then(blob => {
-        const nomeArq = "laudo.docx";
-        if (window.navigator && window.navigator.msSaveOrOpenBlob) {
-          window.navigator.msSaveOrOpenBlob(blob, nomeArq);
-        } else {
-          const link = document.createElement("a");
-          link.href = window.URL.createObjectURL(blob);
-          link.download = nomeArq;
-          document.body.appendChild(link);
-          link.click();
-          setTimeout(() => {
-            window.URL.revokeObjectURL(link.href);
-            document.body.removeChild(link);
-          }, 500);
-        }
-      });
+    gerarDocx(aL, fT);
     }
 
+    function gerarDocx(aL, fT){
+
+        try {
+            let arrParagraf = [];
+            for (var i=0; i< aL.length; i++){
+                //default '0':
+                var alinhamentoDX = docx.AlignmentType.JUSTIFIED;
+                var linhaDX = 250;
+                var antesDX = 20 * 72 * 0.01;
+                var depoisDX = 20 * 72 * 0.01;
+                var tamanhoDX = 24;
+                var negritoDX = false;
+                var propositoGeral;
+
+                switch(fT[i]){
+                    case 0: // paragrafo
+                        propositoGeral = new docx.Paragraph({
+                            alignment: alinhamentoDX,
+                            spacing:{
+                                line: linhaDX,
+                                before: antesDX,
+                                after: depoisDX
+                            },
+                            children: [
+                                new docx.TextRun({
+                                    text: aL[i],
+                                    bold: negritoDX,
+                                    size: tamanhoDX
+                                })
+                            ]
+                        });
+                        arrParagraf.push(propositoGeral);
+                        break;
+                    case 1: // titulo
+                        propositoGeral = new docx.Paragraph({
+                            alignment: alinhamentoDX,
+                            spacing:{
+                                line: linhaDX,
+                                before: antesDX,
+                                after: depoisDX
+                            },
+                        });
+                        break;
+                    case 2: // assinatura
+                        propositoGeral = new docx.Paragraph({
+                            alignment: alinhamentoDX,
+                            spacing:{
+                                line: linhaDX,
+                                before: antesDX,
+                                after: depoisDX
+                            },
+                        });
+                        break;
+
+                }
+            }
+            return arrParagraf;
+        } catch (error) {
+            console.error('Erro ao gerar documento:', error);
+            return [];
+        }
+    }
+
+
     // Torna global caso necessário para uso no botão/submit
-    window.gerarRelatorio = gerarRelatorio;
+    window.montaLaudo = montaLaudo;
 
     function parseInput(type) {
       let inputStr = '';
