@@ -5,6 +5,9 @@
   <title>Last Resort - Preenchedor de Laudos em Caso de falha do GDL</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="style.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/3.0.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/docx/8.5.0-beta.9/docx.umd.min.js"></script>
+  
 
 </head>
 <body>
@@ -85,13 +88,154 @@
         </div>
       </div>
       
-      <button type="submit">Gerar Relatório</button>
+      <button type="submit" onclick="gerarRelatorio()">Gerar Relatório</button>
     </form>
     <div id="manualReport" class="output" style="display:none;"></div>
   </div>
   
   <script>
     // Função simulada de "extração de dados" de string ou OCR
+    
+    // Usa docx.js para criar arquivo .docx real
+    // Docx.js CDN: https://cdnjs.cloudflare.com/ajax/libs/docx/8.5.0-beta.9/docx.umd.min.js
+    // Certifique-se que <script src="https://cdnjs.cloudflare.com/ajax/libs/docx/8.5.0-beta.9/docx.umd.min.js"> está incluído no HTML
+
+    function gerarRelatorio() {
+      // Extrai os dados do formulário manual
+      const protocolo = document.getElementById('protocolo').value;
+      const bo = document.getElementById('bo').value;
+      const delegacia = document.getElementById('delegacia').value;
+      const autoridade = document.getElementById('autoridade').value;
+      const envolvidos = document.getElementById('envolvidos').value;
+      const dataSolicitacao = document.getElementById('dataSolicitacao').value;
+      const horaSolicitacao = document.getElementById('horaSolicitacao').value;
+      const dataFato = document.getElementById('dataFato').value;
+      const horaFato = document.getElementById('horaFato').value;
+      const dataAtendimento = document.getElementById('dataAtendimento').value;
+      const horaAtendimento = document.getElementById('horaAtendimento').value;
+      const dataLiberacao = document.getElementById('dataLiberacao').value;
+      const horaLiberacao = document.getElementById('horaLiberacao').value;
+
+      // Helper para data por extenso pt-BR
+      function dataPorExtenso(dt) {
+        if (!dt) return '';
+        const meses = [
+          'janeiro', 'fevereiro', 'março',
+          'abril', 'maio', 'junho',
+          'julho', 'agosto', 'setembro',
+          'outubro', 'novembro', 'dezembro'
+        ];
+        let m = '';
+        let y = '';
+        let d = '';
+        // tenta yyyy-mm-dd ou dd/mm/yyyy
+        if (/^\d{4}-\d{2}-\d{2}$/.test(dt)) {
+          [y, m, d] = dt.split('-');
+        } else if (/^\d{2}\/\d{2}\/\d{4}$/.test(dt)) {
+          [d, m, y] = dt.split('/');
+        } else {
+          return dt;
+        }
+        return `${parseInt(d)} de ${meses[parseInt(m) - 1]} de ${y}`;
+      }
+
+      // Monta conteúdo para as seções do laudo
+      const laudoNumero = protocolo ? protocolo : '___/____';
+      const origem = [
+        bo ? `BO - ${bo}` : null,
+        // Supondo que o campo "Riesp" não está no formulário, fica vazio. 
+        // Pode adicionar se necessário.
+      ].filter(Boolean).join('; ');
+
+      const docTitle = [
+        {label: "Laudo:", value: laudoNumero},
+        {label: "Protocolo:", value: protocolo ? protocolo : '____'},
+        {label: "Origem:", value: `${origem}${(origem && protocolo ? '; ' : '')}RIESP - _____________________________;`},
+        {label: "Autoridade Requisitante:", value: autoridade ? autoridade : '(não identificado)'},
+        {label: "Nome(s) do(s) Envolvido(s):", value: envolvidos ? envolvidos : '(não identificado)'},
+        {
+          label: "Data do Exame:",
+          value: dataFato ? dataFato.split('-').reverse().join('/') : '(não identificado)'
+        }
+      ];
+
+      // Frase de abertura, conforme solicitado
+      const dataExameExtenso = dataPorExtenso(dataFato);
+      const cidade = 'Americana'; // fixo (pode ajustar)
+      const headTexto =
+        `Aos ${dataExameExtenso ? dataExameExtenso : '___ de ___________ de ____'}, na cidade de ${cidade} e no INSTITUTO DE CRIMINALÍSTICA, da Superintendência da Polícia Técnico-Científica, da Secretaria de Segurança Pública do Estado de São Paulo, de conformidade com o disposto no artigo 178 do Decreto-Lei número 3.689 de 3 de outubro de 1941, pelo Perito Criminal Diretor deste I.C., Dr. Ricardo Lopes Ortega, foi designado(a) o(a) Perito(a) Criminal Leonardo Reis da Silva para proceder ao exame pericial químicotoxicológico, em atendimento a requisição expedida pelo(a) Exmo(a). Sr(a). Delegado(a) do(a) 02º D.P. HORTOLÂNDIA - HORTOLÂNDIA, ${autoridade ? autoridade : '(não identificado)'}.
+`;
+
+
+
+      const { Document, Packer, Paragraph, TextRun } = window.docx;
+
+      // Cria array de Paragraphs para título
+      const paragraphs = [];
+      docTitle.forEach(row => {
+        paragraphs.push(
+          new Paragraph({
+            spacing: { after: 120 },
+            children: [
+              new TextRun({ text: row.label + " ", bold: true }),
+              new TextRun({ text: row.value })
+            ]
+          })
+        );
+      });
+      // Adiciona parágrafo em branco
+      paragraphs.push(new Paragraph(""));
+
+      // Corpo/head/frase de abertura
+      headTexto.split('\n').forEach(line => {
+        if (line.trim().length > 0) {
+          paragraphs.push(
+            new Paragraph({
+              spacing: { after: 100 },
+              children: [ new TextRun({ text: line }) ]
+            })
+          );
+        } else {
+          paragraphs.push(new Paragraph(""));
+        }
+      });
+      // Opcional: mais conteúdo adicional pode ser inserido depois
+
+      // Monta documento
+      const doc = new Document({
+        creator: "Gerador de Laudo",
+        title: "Laudo",
+        description: "Laudo gerado automaticamente",
+        sections: [
+          {
+            properties: {},
+            children: paragraphs
+          }
+        ]
+      });
+
+      // Salva arquivo ao usuário
+      Packer.toBlob(doc).then(blob => {
+        const nomeArq = "laudo.docx";
+        if (window.navigator && window.navigator.msSaveOrOpenBlob) {
+          window.navigator.msSaveOrOpenBlob(blob, nomeArq);
+        } else {
+          const link = document.createElement("a");
+          link.href = window.URL.createObjectURL(blob);
+          link.download = nomeArq;
+          document.body.appendChild(link);
+          link.click();
+          setTimeout(() => {
+            window.URL.revokeObjectURL(link.href);
+            document.body.removeChild(link);
+          }, 500);
+        }
+      });
+    }
+
+    // Torna global caso necessário para uso no botão/submit
+    window.gerarRelatorio = gerarRelatorio;
+
     function parseInput(type) {
       let inputStr = '';
       if (type === 'manual') {
@@ -492,6 +636,8 @@
       document.getElementById('embalagem').value = "";
       document.getElementById('morfologia').value = "";
       document.getElementById('resultado').value = "";
+      document.getElementById('lacreEntrada').value = "";
+      document.getElementById('lacreSaida').value = "";
     } 
 
     // Função para renderizar lista dos entorpecentes já adicionados
@@ -511,6 +657,8 @@
           <b>Embalagem:</b> ${item.embalagem} <br>
           <b>Morfologia:</b> ${item.morfologia} <br>
           <b>Resultado:</b> ${item.resultado} <br>
+          <b>Lacre de Entrada:</b> ${item.lacreEntrada} <br>
+          <b>Lacre de Saída:</b> ${item.lacreSaida} <br>
           <button type="button" onclick="alterarEntorpecente(${item.id})">Alterar</button>
         `;
         lista.appendChild(div);
@@ -552,15 +700,9 @@
       if (morfoMatch && morfoMatch.length) {
         morfologiaEncontrada = morfoMatch.map(_ => _.replace(/[^\w\s]/g,'')).join(', ');
       }
+
       // Exibe no console a entrada recebida e os dados extraídos para debug
-      console.log('Texto de entrada (entorpecente):', texto);
-      console.log('Extração:', {
-        pesoBruto: pesoBruto,
-        pesoLiquido: pesoLiquido,
-        unidade: unidade,
-        embalagem: embalagemEncontrada,
-        morfologia: morfologiaEncontrada
-      });
+    
 
       // Procura "positivo" ou "negativo" como resultado
       let resultado = '';
@@ -570,11 +712,63 @@
         resultado = 'Negativo';
       }
 
+      // Lacre de Entrada: busca termo "lacre" ou o penúltimo número após "positivo" ou "negativo"
+      const LACRE_REGEX = /\b(lacre)\b/gi;
+      let lacreEntradaEncontrado = '';
+      let lacreMatch = t.match(LACRE_REGEX);
+      if (lacreMatch && lacreMatch.length) {
+        lacreEntradaEncontrado = lacreMatch.map(_ => _.replace(/[^\w\s]/g, '')).join(', ');
+      } else {
+        // Busca o penúltimo número após "positivo" ou "negativo"
+        // Encontre a posição de "positivo" ou "negativo"
+        let resultadoMatch = t.match(/\b(positivo|negativo)\b/);
+        if (resultadoMatch) {
+          // Pega a substring após "positivo" ou "negativo"
+          let resultadoPos = t.indexOf(resultadoMatch[0]) + resultadoMatch[0].length;
+          let afterResultado = t.slice(resultadoPos);
+          // Busca todos os números após "positivo"/"negativo"
+          const numerosDepois = afterResultado.match(/[\d]+(?:[.,]\d+)?/g) || [];
+          if (numerosDepois.length >= 2) {
+            // penúltimo número
+            lacreEntradaEncontrado = numerosDepois[numerosDepois.length - 2].replace(',', '.');
+          } else if (numerosDepois.length === 1) {
+            // se houver apenas um número, pega ele
+            lacreEntradaEncontrado = numerosDepois[0].replace(',', '.');
+          }
+        }
+      }
+
+      // Lacre de Saída: será o último número do texto, após resultado (positivo ou negativo)
+      let lacreSaidaEncontrado = '';
+      let resultadoMatch = t.match(/\b(positivo|negativo)\b/i);
+      if (resultadoMatch) {
+        // Pega a substring após "positivo" ou "negativo"
+        let resultadoPos = t.indexOf(resultadoMatch[0]) + resultadoMatch[0].length;
+        let afterResultado = t.slice(resultadoPos);
+        // Busca todos os números após "positivo"/"negativo"
+        const numerosDepois = afterResultado.match(/[\d]+(?:[.,]\d+)?/g) || [];
+        if (numerosDepois.length > 0) {
+          // último número
+          lacreSaidaEncontrado = numerosDepois[numerosDepois.length - 1].replace(',', '.');
+        }
+      }
+
+      console.log('Texto de entrada (entorpecente):', texto);
+      console.log('Extração:', {
+        pesoBruto: pesoBruto,
+        pesoLiquido: pesoLiquido,
+        unidade: unidade,
+        embalagem: embalagemEncontrada,
+        morfologia: morfologiaEncontrada,
+        resultado: resultado,
+        lacreEntrada: lacreEntradaEncontrado,
+        lacreSaida: lacreSaidaEncontrado
+      });
       // Preenchimento automático dos campos do formulário de entorpecentes, se houver
       // Só executa se houver pelo menos um dos campos não vazio
       if (
         pesoBruto || pesoLiquido || unidade || 
-        embalagemEncontrada || morfologiaEncontrada || resultado
+        embalagemEncontrada || morfologiaEncontrada || resultado || lacreEntradaEncontrado || lacreSaidaEncontrado
       ) {
         // verifica existência dos campos antes de tentar preencher (p/ segurança caso em contexto só js)
         if (document.getElementById('pesoBruto'))
@@ -589,6 +783,10 @@
           document.getElementById('morfologia').value = morfologiaEncontrada;
         if (document.getElementById('resultado'))
           document.getElementById('resultado').value = resultado;
+        if (document.getElementById('lacreEntrada'))
+          document.getElementById('lacreEntrada').value = lacreEntradaEncontrado;
+        if (document.getElementById('lacreSaida'))
+          document.getElementById('lacreSaida').value = lacreSaidaEncontrado;
       }
       return {
         pesoBruto: pesoBruto,
@@ -596,7 +794,9 @@
         unidade: unidade,
         embalagem: embalagemEncontrada,
         morfologia: morfologiaEncontrada,
-        resultado: resultado
+        resultado: resultado,
+        lacreEntrada: lacreEntradaEncontrado,
+        lacreSaida: lacreSaidaEncontrado
       };
     }
     // Função para adicionar entorpecente
@@ -607,6 +807,8 @@
       const embalagem = document.getElementById('embalagem').value;
       const morfologia = document.getElementById('morfologia').value;
       const resultado = document.getElementById('resultado').value;
+      const lacreEntrada = document.getElementById('lacreEntrada').value;
+      const lacreSaida = document.getElementById('lacreSaida').value;
 
       let descEntorpecente = '';
       if (unidade && unidade.trim() !== "") {
@@ -669,8 +871,6 @@
       }
 
 
-      console.log('Descrição do entorpecente:', descEntorpecente);
-
 
       if (
         pesoBruto.trim() === "" && 
@@ -678,7 +878,9 @@
         unidade.trim() === "" &&
         embalagem.trim() === "" &&
         morfologia.trim() === "" &&
-        resultado.trim() === ""
+        resultado.trim() === "" &&
+        lacreEntrada.trim() === "" &&
+        lacreSaida.trim() === ""
       ) {
         alert("Preencha ao menos um campo para adicionar o item de entorpecente.");
         return;
@@ -691,7 +893,9 @@
         unidade,
         embalagem,
         morfologia,
-        resultado
+        resultado,
+        lacreEntrada,
+        lacreSaida
       });
 
       resetEntorpecentesForm();
@@ -708,7 +912,8 @@
       document.getElementById('embalagem').value = item.embalagem;
       document.getElementById('morfologia').value = item.morfologia;
       document.getElementById('resultado').value = item.resultado;
-
+      document.getElementById('lacreEntrada').value = item.lacreEntrada;
+      document.getElementById('lacreSaida').value = item.lacreSaida;
       // Remove o item para poder sobrescrever ao adicionar novamente
       entorpecentes = entorpecentes.filter(e => e.id !== id);
       entorpecenteId--;
@@ -730,6 +935,11 @@
     <!-- Caixa de texto para extração de informações manual (relatório manual) -->
     <div class="input-section" style="margin-bottom:18px;">
       <label for="entorpecenteString"><b>Informe os dados para extração automática:</b></label>
+      <div style="font-size: 0.91em; color: #555; margin: 4px 0 10px 0;">
+        <i>
+          Ordem dos campos extraídos automaticamente: <b>Peso Bruto</b>, <b>Peso Líquido</b>, <b>Embalagem</b>, <b>Morfologia</b>, <b>Lacre de Entrada</b>, <b>Lacre de Saída</b> Ex.: 12,1 13,3 nó pó positivo 0000000 1111111.
+        </i>
+      </div>
       <textarea id="entorpecenteString" rows="4" placeholder="Cole aqui o texto contendo as informações dos entorpecentes para extração automática..."></textarea>
       
       <button type="button" onclick="extrairEntorpecenteAutomaticamente(document.getElementById('entorpecenteString').value)">Extrair Informações</button>
@@ -759,9 +969,20 @@
           <label>Morfologia:</label>
           <input type="text" id="morfologia" name="morfologia" autocomplete="off">
         </div>
+    </div>
+    <div class="entorpecente-form-row">
+
         <div>
           <label>Resultado:</label>
           <input type="text" id="resultado" name="resultado" autocomplete="off">
+        </div>
+        <div>
+          <label>Lacre de Entrada:</label>
+          <input type="text" id="lacreEntrada" name="lacreEntrada" autocomplete="off">
+        </div>
+        <div>
+          <label>Lacre de Saída:</label>
+          <input type="text" id="lacreSaida" name="lacreSaida" autocomplete="off">
         </div>
       </div>
       <button type="button" onclick="adicionarEntorpecente()">Adicionar Item</button>
