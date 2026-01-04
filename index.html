@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Last Resort - Preenchedor de Laudos em Caso de falha do GDL</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="style.css">
+
+</head>
+<body>
+  <h1>Last Resort - Preenchedor de Laudos em Caso de falha do GDL</h1>
+  
+  <div class="input-section">
+    <h2>Cabeçalho - Lê um texto e tenta depreender a informação</h2>
+    <label for="manualString">1 - Ditado ou digitação livre:</label>
+    <br>Roteiro: protocolo, BO, delegacia, autoridade, envolvidos, data (se apenas uma data for informada, sera usada para tudo, alternativamente informe a data da solicitação, data do fato, data do atendimento e data de liberação), hora (idem data)
+
+    <textarea id="manualString" rows="2" placeholder="Digite aqui a string para análise automática..."></textarea>
+    <button onclick="parseInput('manual')">Analisar Ditado</button>
+    <br>
+    <br>
+    <label for="ocrString" style="margin-top:18px;">2 - Texto lido via OCR (google lens)</label>
+    <textarea id="ocrString" rows="2" placeholder="Cole aqui a string proveniente de OCR..."></textarea>
+    <button onclick="parseInput('ocr')">Analisar OCR</button>
+    
+    <div id="parsedOutput" class="output" style="display:none;"></div>
+  </div>
+  
+  <div class="input-section">
+    <h2>Preenchimento Manual</h2>
+    <form id="manualForm" class="form-section" onsubmit="handleManualForm(event)">
+      <label for="protocolo">Protocolo:</label>
+      <input type="text" id="protocolo" name="protocolo" placeholder="Ex: T17000/26" required>
+
+      <label for="bo">BO (Boletim de Ocorrência):</label>
+      <input type="text" id="bo" name="bo" placeholder="Ex: AA0000-1/2026" required>
+
+      <label for="delegacia">Delegacia:</label>
+      <input type="text" id="delegacia" name="delegacia" placeholder="1DP - Americana" required>
+
+      <label for="autoridade">Autoridade:</label>
+      <input type="text" id="autoridade" name="autoridade" placeholder="Nome da Autoridade Policial" required>
+
+      <label for="envolvidos">Envolvidos:</label>
+      <input type="text" id="envolvidos" name="envolvidos" placeholder="Whagninton Whualas, Ronald Whalson, etc." required>
+
+      <div style="display: flex; gap: 12px;">
+        <div style="flex:1;">
+          <label for="dataSolicitacao">Data da Solicitação:</label>
+          <input type="date" id="dataSolicitacao" name="dataSolicitacao">
+        </div>
+        <div style="flex:1;">
+          <label for="horaSolicitacao">Hora da Solicitação:</label>
+          <input type="time" id="horaSolicitacao" name="horaSolicitacao">
+        </div>
+      </div>
+      <div style="display: flex; gap: 12px;">
+        <div style="flex:1;">
+          <label for="dataFato">Data do Fato:</label>
+          <input type="date" id="dataFato" name="dataFato">
+        </div>
+        <div style="flex:1;">
+          <label for="horaFato">Hora do Fato:</label>
+          <input type="time" id="horaFato" name="horaFato">
+        </div>
+      </div>
+      <div style="display: flex; gap: 12px;">
+        <div style="flex:1;">
+          <label for="dataAtendimento">Data do Atendimento:</label>
+          <input type="date" id="dataAtendimento" name="dataAtendimento">
+        </div>
+        <div style="flex:1;">
+          <label for="horaAtendimento">Hora do Atendimento:</label>
+          <input type="time" id="horaAtendimento" name="horaAtendimento">
+        </div>
+      </div>
+      <div style="display: flex; gap: 12px;">
+        <div style="flex:1;">
+          <label for="dataLiberacao">Data da Liberação:</label>
+          <input type="date" id="dataLiberacao" name="dataLiberacao">
+        </div>
+        <div style="flex:1;">
+          <label for="horaLiberacao">Hora da Liberação:</label>
+          <input type="time" id="horaLiberacao" name="horaLiberacao">
+        </div>
+      </div>
+      
+      <button type="submit">Gerar Relatório</button>
+    </form>
+    <div id="manualReport" class="output" style="display:none;"></div>
+  </div>
+  
+  <script>
+    // Função simulada de "extração de dados" de string ou OCR
+    function parseInput(type) {
+      let inputStr = '';
+      if (type === 'manual') {
+        inputStr = document.getElementById('manualString').value.trim();
+      } else {
+        inputStr = document.getElementById('ocrString').value.trim();
+      }
+      if (!inputStr) {
+        showParsedOutput('<span style="color:crimson;">Por favor, insira uma string para análise.</span>');
+        return;
+      }
+
+      // Limpar possíveis campos preenchidos
+      
+      document.getElementById('protocolo').value = '';
+      document.getElementById('bo').value = '';
+      document.getElementById('delegacia').value = '';
+      document.getElementById('autoridade').value = '';
+      document.getElementById('envolvidos').value = '';
+      document.getElementById('dataSolicitacao').value = '';
+      document.getElementById('horaSolicitacao').value = '';
+      document.getElementById('dataFato').value = '';
+      document.getElementById('horaFato').value = '';
+      document.getElementById('dataAtendimento').value = '';
+      document.getElementById('horaAtendimento').value = '';
+      document.getElementById('dataLiberacao').value = '';
+      document.getElementById('horaLiberacao').value = '';
+
+      // Regex e parsing para protocolo, BO, delegacia, autoridade e envolvidos
+
+      // Protocolo: busca formato T00000/2025 ou T00000/25 (T + 5 dígitos + / + 2 ou 4 dígitos)
+      let protocolo = '';
+      let protocoloMatch = inputStr.match(/\bT\d{5}\/(\d{2}|\d{4})\b/i);
+      if (protocoloMatch) {
+        protocolo = protocoloMatch[0];
+        document.getElementById('protocolo').value = protocolo;
+      }
+
+      // BO: busca AA0000-2/2025, AA0000-1/2025, AA0000/2025, AA0000/25 (2 letras + 4 números + opcionalmente -1/-2 + / + 2 ou 4 números)
+      let bo = '';
+      let boMatch = inputStr.match(/\b([A-Z]{2}\d{4}(?:-(?:1|2))?\/\d{2,4})\b/i);
+      if (boMatch) {
+        bo = boMatch[1];
+        document.getElementById('bo').value = bo;
+      }
+
+      // Delegacia: procurar nomes e padrões específicos conforme solicitado
+      let delegacia = '';
+
+      // Lista de possíveis cidades (acento e maiúscula/minúscula variáveis)
+      const cidades = [
+        "Americana",
+        "Nova Odessa",
+        "Santa Bárbara d'Oeste",
+        "Santa Barbara d'Oeste",
+        "Santa Barbara do Oeste",
+        "Santa Barbara",
+        "Santa Bárbara",
+        "Sumaré",
+        "Sumare",
+        "Hortolândia",
+        "Hortolandia",
+        "Engenheiro Coelho",
+        "Cosmópolis",
+        "Cosmopolis",
+        "Artur Nogueira"
+      ];
+
+      // Montar regex para cidades: insensível a maiúsculas/minúsculas e acentos
+      // (usando abordagem de normalização no teste posterior)
+      const cidadeAlternativa = cidades.map(cidade => cidade.replace(/[\s.'´`]/g, '\\s*')).join('|');
+
+      // Tipos de unidade policial admitidos entre delegacia/dependencias e cidade (com possíveis variantes)
+      const unidadePolicial = [
+          '(?:\\d+\\s*DP)',      // ex: 1DP, 2 DP, 3 DP
+          'DIG',
+          'DDM',
+          'DISE',
+          'Del\\.\\s*Pol\\.?'
+      ].join('|');
+
+      // Regex principal: delegacia (ou dependências) + opcionalmente espaço,  + tipo unidade, + nome da cidade
+      const delegaciaRegex = new RegExp(
+        // início: "delegacia" ou "dependencias", aceitando plural/singular
+        '\\b(delegacia|depend[êe]ncia(?:s)?)\\s*[:,\\-]?\\s*'
+        // unidade policial obrigatória, precedida de espaço opcional
+        + '(' + unidadePolicial + ')\\s*[:,\\-]?\\s*'
+        // cidade
+        + '(' + cidadeAlternativa + ')\\b',
+        'i'
+      );
+
+      let delegaciaMatch = inputStr.match(delegaciaRegex);
+
+      if (delegaciaMatch) {
+        // Monta a string "unidade + cidade" sem a palavra 'delegacia', com espaçamentos limpos
+        // Normaliza a cidade para capitalização/tipografia padrão (se necessário)
+        let unidade = delegaciaMatch[2].replace(/\s+/g, '');
+        let cidadeOriginal = delegaciaMatch[3];
+
+        // Padronizar cidade para forma preferida (com acento, etc)
+        let cidadePadrao = cidades.find(c =>
+          c.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+          ===
+          cidadeOriginal.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+        ) || cidadeOriginal;
+
+        delegacia = `${unidade} ${cidadePadrao}`;
+        document.getElementById('delegacia').value = delegacia.trim();
+      }
+
+      // Autoridade: precedências "autoridade", "delegado", ou "delegada", mas PARE ao encontrar um novo campo pesquisado (ex: 'envolvido')
+      let autoridade = '';
+      // Regex: pegue "autoridade", "delegado" ou "delegada" até o início de um novo campo de interesse
+      // Garante que não captura além do campo autoridade; para, por exemplo, em 'envolvido', 'envolvidos', 'partes', 'indivíduos'
+      let autoridadeMatch = inputStr.match(
+        /(?:autoridade|delegad[oa])\s*[:\-]?\s*([A-ZÁ-Úa-zá-ú \-\.]+?)(?=(?:\n|$|envolvid[oa]s?|partes?|indiv[íi]duos?))/i
+      );
+      if (autoridadeMatch) {
+        autoridade = (autoridadeMatch[1] || '').trim();
+        document.getElementById('autoridade').value = autoridade;
+      }
+
+      // Envolvidos: busca até outro campo pesquisado começar (ex: autoridade, delegado, indiciado, data, hora, etc)
+      let envolvidos = ''; 
+      // Procura por: envolvido(s), parte(s), indiciado(s), parando ao encontrar outro campo de interesse
+      // Agora inclui "data" e "hora" como possíveis limites
+      let envolvidosMatch = inputStr.match(
+        /(?:envolvid[oa]s?|partes?|indiciad[oa]s?)\s*[:\-]?\s*([\s\S]+?)(?=(?:\n|$|autoridade|delegad[oa]|indiciad[oa]s?|partes?|envolvid[oa]s?|data|hora))/i
+      );
+      if (envolvidosMatch) {
+        envolvidos = (envolvidosMatch[1] || '').trim();
+        // Remove eventuais quebras de linha extras no final
+        envolvidos = envolvidos.replace(/[\n\r]+$/g, '').trim();
+        document.getElementById('envolvidos').value = envolvidos;
+      }
+      
+      // Trata "hoje" e "ontem" como datas
+      const hoje = new Date();
+      const ontem = new Date();
+      ontem.setDate(hoje.getDate() - 1);
+
+      // Função para formatar data como yyyy-mm-dd
+      function dateToYMD(dateObj) {
+        const y = dateObj.getFullYear();
+        const m = String(dateObj.getMonth() + 1).padStart(2,'0');
+        const d = String(dateObj.getDate()).padStart(2,'0');
+        return `${y}-${m}-${d}`;
+      }
+
+      // Substituir "hoje" e "ontem" antes de regex de datas
+      inputStr = inputStr.replace(/\bhoje\b/gi, dateToYMD(hoje));
+      inputStr = inputStr.replace(/\bontem\b/gi, dateToYMD(ontem));
+
+      // Nova abordagem: busca direta por "data" e "hora" (apenas essas palavras)
+      // Procura por "data" seguido imediatamente do valor; idem para "hora"
+      // Salva tudo em datadefault
+
+      // Função para converter data yyyy-MM-dd em dd/mm/yyyy
+      function isoToYmdDate(ymd) {
+        if (!ymd || !/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return ymd;
+        const [y, m, d] = ymd.split('-');
+        return `${d}/${m}/${y}`;
+      }
+
+      // Função para converter data dd/mm/yyyy ou dd-mm-yyyy em yyyy-MM-dd
+      function ymdToIsoDate(ymd) {
+        if (!ymd || !/^\d{2}[\/\-]\d{2}[\/\-]\d{4}$/.test(ymd)) return ymd;
+        let match = ymd.match(/^(\d{2})[\/\-](\d{2})[\/\-](\d{4})$/);
+        if (!match) return ymd;
+        const [, d, m, y] = match;
+        return `${y}-${m}-${d}`;
+      }
+
+      // Ajusta as datas default para formato dd/mm/yyyy (BR)
+      // Por padrão, datadefault usaria yyyy-MM-dd vindo de hoje.toISOString().split('T')[0]
+      // Vamos já salvar como padrão BR (dd/mm/yyyy) para coerência
+      let datadefaultBR = {
+        data: isoToYmdDate(hoje.toISOString().split('T')[0]),
+        hora: hoje.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+      };
+
+      let datadefault = {
+        data: isoToYmdDate(hoje.toISOString().split('T')[0]),
+        hora: hoje.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+        
+      };
+
+      // Regex busca "data" seguida de formato de data (dd/mm/yyyy, dd-mm-yyyy, yyyy-mm-dd, yyyy/mm/dd)
+      let datamatch = inputStr.match(/data\s*[:\-]?\s*((?:\d{2}[\/\-]\d{2}[\/\-]\d{4})|(?:\d{4}[\/\-]\d{2}[\/\-]\d{2}))/i);
+      if (datamatch) {
+        datadefault.data = datamatch[1];
+      }
+
+      // Regex busca "hora" seguida de formato de hora (hh:mm ou hh:mm:ss)
+      let horamatch = inputStr.match(/hora\s*[:\-]?\s*(\d{2}:\d{2}(?::\d{2})?)/i);
+      if (horamatch) {
+        datadefault.hora = horamatch[1];
+      }
+
+      // Procura "data da solicitação" e "hora da solicitação"
+      let dsol = {data: null, hora: null};
+      let dsolDataMatch = inputStr.match(/data da solicita[çc][aã]o\s*[:\-]?\s*((?:\d{2}[\/\-]\d{2}[\/\-]\d{4})|(?:\d{4}[\/\-]\d{2}[\/\-]\d{2}))/i);
+      if (dsolDataMatch) {
+        dsol.data = dsolDataMatch[1];
+      }
+
+      let dsolHoraMatch = inputStr.match(/hora da solicita[çc][aã]o\s*[:\-]?\s*(\d{2}:\d{2}(?::\d{2})?)/i);
+      if (dsolHoraMatch) {
+        dsol.hora = dsolHoraMatch[1];
+      }
+
+      // Se não encontrar, tenta preencher com default detectado ou com data do atendimento (a ser tratada depois)
+      if (!dsol.data) {
+        if (datadefault.data) {
+          dsol.data = datadefault.data;
+        }
+        // Se continuar nulo, pode tentar o do atendimento depois
+      }
+      if (!dsol.hora) {
+        if (datadefault.hora) {
+          dsol.hora = datadefault.hora;
+        }
+        // Se continuar nulo, pode tentar o do atendimento depois
+      }
+
+
+      // Procura "data do fato" e "hora do fato"
+      let dfato = {data: null, hora: null};
+      let dfatoDataMatch = inputStr.match(/data do fato\s*[:\-]?\s*((?:\d{2}[\/\-]\d{2}[\/\-]\d{4})|(?:\d{4}[\/\-]\d{2}[\/\-]\d{2}))/i);
+      if (dfatoDataMatch) {
+        dfato.data = dfatoDataMatch[1];
+      }
+      let dfatoHoraMatch = inputStr.match(/hora do fato\s*[:\-]?\s*(\d{2}:\d{2}(?::\d{2})?)/i);
+      if (dfatoHoraMatch) {
+        dfato.hora = dfatoHoraMatch[1];
+      }
+      // Se não encontrar, tenta preencher com default ou com data da solicitação
+      if (!dfato.data) {
+        if (datadefault.data) {
+          dfato.data = datadefault.data;
+        } else if (dsol.data) {
+          dfato.data = dsol.data;
+        }
+      }
+      if (!dfato.hora) {
+        if (datadefault.hora) {
+          dfato.hora = datadefault.hora;
+        } else if (dsol.hora) {
+          dfato.hora = dsol.hora;
+        }
+      }
+
+      // Procura "data do atendimento" e "hora do atendimento"
+      let datend = {data: null, hora: null};
+      let datendDataMatch = inputStr.match(/data do atendimento\s*[:\-]?\s*((?:\d{2}[\/\-]\d{2}[\/\-]\d{4})|(?:\d{4}[\/\-]\d{2}[\/\-]\d{2}))/i);
+      if (datendDataMatch) {
+        datend.data = datendDataMatch[1];
+      }
+      let datendHoraMatch = inputStr.match(/hora do atendimento\s*[:\-]?\s*(\d{2}:\d{2}(?::\d{2})?)/i);
+      if (datendHoraMatch) {
+        datend.hora = datendHoraMatch[1];
+      }
+      // Se não encontrar, tenta preencher com default ou com data da solicitação
+      if (!datend.data) {
+        if (datadefault.data) {
+          datend.data = datadefault.data;
+        } else if (dsol.data) {
+          datend.data = dsol.data;
+        }
+      }
+      if (!datend.hora) {
+        if (datadefault.hora) {
+          datend.hora = datadefault.hora;
+        } else if (dsol.hora) {
+          datend.hora = dsol.hora;
+        }
+      }
+
+      // Procura "data da liberação" e "hora da liberação"
+      let dlib = {data: null, hora: null};
+      let dlibDataMatch = inputStr.match(/data da libera[çc][aã]o\s*[:\-]?\s*((?:\d{2}[\/\-]\d{2}[\/\-]\d{4})|(?:\d{4}[\/\-]\d{2}[\/\-]\d{2}))/i);
+      if (dlibDataMatch) {
+        dlib.data = dlibDataMatch[1];
+      }
+      let dlibHoraMatch = inputStr.match(/hora da libera[çc][aã]o\s*[:\-]?\s*(\d{2}:\d{2}(?::\d{2})?)/i);
+      if (dlibHoraMatch) {
+        dlib.hora = dlibHoraMatch[1];
+      }
+      // Se não encontrar, tenta preencher com default ou com data da solicitação
+      if (!dlib.data) {
+        if (datadefault.data) {
+          dlib.data = datadefault.data;
+        } else if (dsol.data) {
+          dlib.data = dsol.data;
+        }
+      }
+      if (!dlib.hora) {
+        if (datadefault.hora) {
+          dlib.hora = datadefault.hora;
+        } else if (dsol.hora) {
+          dlib.hora = dsol.hora;
+        }
+      }
+
+      console.log("Datas e horas obtidas:");
+      console.log("Data da Solicitação:", dsol.data, "| Hora da Solicitação:", dsol.hora);
+      console.log("Data do Fato:", dfato.data, "| Hora do Fato:", dfato.hora);
+      console.log("Data do Atendimento:", datend.data, "| Hora do Atendimento:", datend.hora);
+      console.log("Data da Liberação:", dlib.data, "| Hora da Liberação:", dlib.hora);
+
+      // Preenche os campos no formulário, se existirem
+      if (dsol.data) document.getElementById('dataSolicitacao').value = ymdToIsoDate(dsol.data); 
+      if (dsol.hora) document.getElementById('horaSolicitacao').value = dsol.hora;
+      if (dfato.data) document.getElementById('dataFato').value = ymdToIsoDate(dfato.data);
+      if (dfato.hora) document.getElementById('horaFato').value = dfato.hora;
+      if (datend.data) document.getElementById('dataAtendimento').value = ymdToIsoDate(datend.data);
+      if (datend.hora) document.getElementById('horaAtendimento').value = datend.hora;
+      if (dlib.data) document.getElementById('dataLiberacao').value = ymdToIsoDate(dlib.data);
+      if (dlib.hora) document.getElementById('horaLiberacao').value = dlib.hora;
+      // Tenta encontrar padrões básicos em português
+
+      // Construir saída resumida
+      let output = `
+        <b>Protocolo:</b> ${protocolo ? protocolo : '(não identificado)'}<br>
+        <b>BO:</b> ${bo ? bo : '(não identificado)'}<br>
+        <b>Delegacia:</b> ${delegacia ? delegacia : '(não identificado)'}<br>
+        <b>Autoridade:</b> ${autoridade ? autoridade : '(não identificado)'}<br>
+        <b>Envolvidos:</b> ${envolvidos ? envolvidos : '(não identificado)'}<br>
+        <b>Data da Solicitação:</b> ${dsol.data ? ymdToIsoDate(dsol.data) : '(não identificado)'}<br>
+        <b>Hora da Solicitação:</b> ${dsol.hora ? dsol.hora : '(não identificado)'}<br>
+        <b>Data do Fato:</b> ${dfato.data ? ymdToIsoDate(dfato.data) : '(não identificado)'}<br>
+        <b>Hora do Fato:</b> ${dfato.hora ? dfato.hora : '(não identificado)'}<br>
+        <b>Data do Atendimento:</b> ${datend.data ? ymdToIsoDate(datend.data) : '(não identificado)'}<br>
+        <b>Hora do Atendimento:</b> ${datend.hora ? datend.hora : '(não identificado)'}<br>
+        <b>Data da Liberação:</b> ${dlib.data ? ymdToIsoDate(dlib.data) : '(não identificado)'}<br>
+        <b>Hora da Liberação:</b> ${dlib.hora ? dlib.hora : '(não identificado)'}<br>
+
+      `;
+      showParsedOutput(output);
+    }
+    function showParsedOutput(content) {
+      const out = document.getElementById('parsedOutput');
+      out.innerHTML = content;
+      out.style.display = 'block';
+    }
+
+    function handleManualForm(event) {
+      event.preventDefault();
+      const form = document.getElementById('manualForm');   
+      const protocolo = form.protocolo.value;
+      const bo = form.bo.value;
+      const delegacia = form.delegacia.value;
+      const autoridade = form.autoridade.value;
+      const envolvidos = form.envolvidos.value;
+      const dataSolicitacao = form.dataSolicitacao.value;
+      const horaSolicitacao = form.horaSolicitacao.value;
+      const dataFato = form.dataFato.value;
+      const horaFato = form.horaFato.value;
+      const dataAtendimento = form.dataAtendimento.value;
+      const horaAtendimento = form.horaAtendimento.value;
+      const dataLiberacao = form.dataLiberacao.value;
+      const horaLiberacao = form.horaLiberacao.value;
+
+      let report = `
+        <b>Protocolo:</b> ${protocolo ? protocolo : '(não identificado)'}<br>
+        <b>BO:</b> ${bo ? bo : '(não identificado)'}<br>
+        <b>Delegacia:</b> ${delegacia ? delegacia : '(não identificado)'}<br>
+        <b>Autoridade:</b> ${autoridade ? autoridade : '(não identificado)'}<br>
+        <b>Envolvidos:</b> ${envolvidos ? envolvidos : '(não identificado)'}<br>
+        <b>Data da Solicitação:</b> ${dataSolicitacao ? ymdToIsoDate(dataSolicitacao) : '(não identificado)'}<br>
+        <b>Hora da Solicitação:</b> ${horaSolicitacao ? horaSolicitacao : '(não identificado)'}<br>
+        <b>Data do Fato:</b> ${dataFato ? ymdToIsoDate(dataFato) : '(não identificado)'}<br>
+        <b>Hora do Fato:</b> ${horaFato ? horaFato : '(não identificado)'}<br>
+        <b>Data do Atendimento:</b> ${dataAtendimento ? ymdToIsoDate(dataAtendimento) : '(não identificado)'}<br>
+        <b>Hora do Atendimento:</b> ${horaAtendimento ? horaAtendimento : '(não identificado)'}<br>
+        <b>Data da Liberação:</b> ${dataLiberacao ? ymdToIsoDate(dataLiberacao) : '(não identificado)'}<br>
+        <b>Hora da Liberação:</b> ${horaLiberacao ? horaLiberacao : '(não identificado)'}<br>
+
+      `;
+      const manualReport = document.getElementById('manualReport');
+      manualReport.innerHTML = report;
+      manualReport.style.display = 'block';
+
+    }
+  
+
+    
+    // Estrutura HTML dinâmica dos itens de entorpecentes
+    let entorpecentes = [];
+    let entorpecenteId = 1;
+
+    // Função para reiniciar campos do input
+    function resetEntorpecentesForm() {
+      document.getElementById('pesoBruto').value = "";
+      document.getElementById('pesoLiquido').value = "";
+      document.getElementById('unidade').value = "";
+      document.getElementById('embalagem').value = "";
+      document.getElementById('morfologia').value = "";
+      document.getElementById('resultado').value = "";
+    } 
+
+    // Função para renderizar lista dos entorpecentes já adicionados
+    function renderEntorpecentes() {
+      const lista = document.getElementById('listaEntorpecentes');
+      lista.innerHTML = "";
+
+      entorpecentes.forEach((item, i) => {
+        const div = document.createElement('div');
+        div.className = "entorpecenteItem";
+        div.style = "border:1px solid #bbb; border-radius: 6px; padding:10px; margin-bottom:7px; background:#f5f5f5;";
+        div.innerHTML = `
+          <b>Item ${i + 1}:</b><br>
+          <b>Peso Bruto:</b> ${item.pesoBruto} <br>
+          <b>Peso Líquido:</b> ${item.pesoLiquido} <br>
+          <b>Unidade:</b> ${item.unidade} <br>
+          <b>Embalagem:</b> ${item.embalagem} <br>
+          <b>Morfologia:</b> ${item.morfologia} <br>
+          <b>Resultado:</b> ${item.resultado} <br>
+          <button type="button" onclick="alterarEntorpecente(${item.id})">Alterar</button>
+        `;
+        lista.appendChild(div);
+      });
+    }
+
+
+    /**
+     * Função que lê o texto de extração automática e retorna um objeto entorpecente extraído.
+     * - Busca três números: primeiro é peso bruto, segundo peso líquido, terceiro unidade
+     * - Para embalagem: busca termos como nó, epp(endorf), microtubo, frasco, zip, filme, calor, fita adesiva, alumínio
+     * - Para morfologia: busca termo erva, pó, pedra, haxixe
+     * @param {string} texto 
+     * @returns {object} { pesoBruto, pesoLiquido, unidade, embalagem, morfologia }
+     */
+    function extrairEntorpecenteAutomaticamente(texto) {
+      console.log('Texto de entrada (entorpecente):', texto);
+      // Normaliza acentuação e minúscula
+      const t = texto.normalize('NFD').replace(/[\u0300-\u036f]/g, "").toLowerCase();
+
+      // Extrai os três primeiros números (números com vírgula ou ponto tbm)
+      const numeros = t.match(/[\d]+(?:[.,]\d+)?/g) || [];
+      const pesoBruto  = numeros[0] ? numeros[0].replace(',','.') : '';
+      const pesoLiquido = numeros[1] ? numeros[1].replace(',','.') : '';
+      const unidade    = numeros[2] || '';
+
+      // Embalagem: busca variantes no texto
+      const EMB_REGEX = /\b(no|nó|epp(endorf)?|microtubo?s?|frasco?s?|zip|filme|calor|fita adesiva|aluminio|alumínio)\b/gi;
+      let embalagemEncontrada = '';
+      let embalagemMatch = t.match(EMB_REGEX);
+      if (embalagemMatch && embalagemMatch.length) {
+        embalagemEncontrada = embalagemMatch.map(_ => _.replace(/[^\w\s]/g,'')).join(', ');
+      }
+
+      // Morfologia: procura erva, pó, pedra, haxixe 
+      const MORFO_REGEX = /\b(erva|po|pó|pedra|haxixe)\b/gi;
+      let morfologiaEncontrada = '';
+      let morfoMatch = t.match(MORFO_REGEX);
+      if (morfoMatch && morfoMatch.length) {
+        morfologiaEncontrada = morfoMatch.map(_ => _.replace(/[^\w\s]/g,'')).join(', ');
+      }
+      // Exibe no console a entrada recebida e os dados extraídos para debug
+      console.log('Texto de entrada (entorpecente):', texto);
+      console.log('Extração:', {
+        pesoBruto: pesoBruto,
+        pesoLiquido: pesoLiquido,
+        unidade: unidade,
+        embalagem: embalagemEncontrada,
+        morfologia: morfologiaEncontrada
+      });
+
+      // Procura "positivo" ou "negativo" como resultado
+      let resultado = '';
+      if (/\bpositivo\b/i.test(t)) {
+        resultado = 'Positivo';
+      } else if (/\bnegativo\b/i.test(t)) {
+        resultado = 'Negativo';
+      }
+
+      // Preenchimento automático dos campos do formulário de entorpecentes, se houver
+      // Só executa se houver pelo menos um dos campos não vazio
+      if (
+        pesoBruto || pesoLiquido || unidade || 
+        embalagemEncontrada || morfologiaEncontrada || resultado
+      ) {
+        // verifica existência dos campos antes de tentar preencher (p/ segurança caso em contexto só js)
+        if (document.getElementById('pesoBruto'))
+          document.getElementById('pesoBruto').value = pesoBruto;
+        if (document.getElementById('pesoLiquido'))
+          document.getElementById('pesoLiquido').value = pesoLiquido;
+        if (document.getElementById('unidade'))
+          document.getElementById('unidade').value = unidade;
+        if (document.getElementById('embalagem'))
+          document.getElementById('embalagem').value = embalagemEncontrada;
+        if (document.getElementById('morfologia'))
+          document.getElementById('morfologia').value = morfologiaEncontrada;
+        if (document.getElementById('resultado'))
+          document.getElementById('resultado').value = resultado;
+      }
+      return {
+        pesoBruto: pesoBruto,
+        pesoLiquido: pesoLiquido,
+        unidade: unidade,
+        embalagem: embalagemEncontrada,
+        morfologia: morfologiaEncontrada,
+        resultado: resultado
+      };
+    }
+    // Função para adicionar entorpecente
+    function adicionarEntorpecente() {
+      const pesoBruto = document.getElementById('pesoBruto').value;
+      const pesoLiquido = document.getElementById('pesoLiquido').value;
+      const unidade = document.getElementById('unidade').value;
+      const embalagem = document.getElementById('embalagem').value;
+      const morfologia = document.getElementById('morfologia').value;
+      const resultado = document.getElementById('resultado').value;
+
+      let descEntorpecente = '';
+      if (unidade && unidade.trim() !== "") {
+        descEntorpecente = unidade + " ";
+      } else {
+        descEntorpecente = "01 ";
+      }
+
+      // Lógica para preenchimento automático do campo embalagem conforme instruções
+      let embalagemValor = embalagem.trim().toLowerCase();
+
+      if (!embalagemValor) {
+        // Se não houver informação de embalagem
+        descEntorpecente = descEntorpecente + "invólucro(s) plástico(s) contendo ";
+      } else if (embalagemValor.includes('no')) {
+        // Se houver 'no'
+        descEntorpecente = descEntorpecente + "invólucro(s) plástico(s) fechado(s) por nó contendo ";
+      } else if (embalagemValor.includes('epp') || embalagemValor.includes('eppendorf')) {
+        // Se houver 'epp' ou 'eppendorf'
+        descEntorpecente = descEntorpecente + 'microtubo(s) plástico(s) do tipo "Eppendorf" dotado(s) de tampa própria contendo ';
+      } else if (embalagemValor.includes('microtubo')) {
+        // Se houver 'microtubo'
+        descEntorpecente = descEntorpecente + 'microtubo(s) plástico(s) dotado(s) de tampa própria contendo ';
+      } else if (embalagemValor.includes('frasco')) {
+        // Se houver 'frasco'
+        descEntorpecente = descEntorpecente + 'frasco(s) plástico(s) dotado(s) de tampa própria contendo ';
+      } else if (embalagemValor.includes('zip')) {
+        // Se houver 'zip'
+        descEntorpecente = descEntorpecente + 'invólucro(s) plástico(s) fechado(s) por pressão (tipo "zip") contendo ';
+      } else if (embalagemValor.includes('filme')) {
+        // Se houver 'filme'
+        descEntorpecente = descEntorpecente + 'invólucro(s) que consistia em filme(s) plástico(s) retorcido(s) encerrando ';
+      } else if (embalagemValor.includes('calor')) {
+        // Se houver 'calor'
+        descEntorpecente = descEntorpecente + 'invólucro(s) plástico(s) fechado(s) por calor contendo ';
+      } else if (embalagemValor.includes('fita adesiva')) {
+        // Se houver 'fita adesiva'
+        descEntorpecente = descEntorpecente + 'invólucro(s) constituído(s) por fita(s) adesiva(s) retorcida(s) encerrando ';
+      } else if (embalagemValor.includes('aluminio') || embalagemValor.includes('alumínio')) {
+        // Se houver 'alumínio'
+        descEntorpecente = descEntorpecente + 'invólucro(s) em papel alumínio retorcido encerrando ';
+      }
+      
+
+      // Lógica para morfologia conforme solicitado
+      let morfologiaValor = morfologia.trim().toLowerCase();
+
+      if (!morfologiaValor) {
+        descEntorpecente = descEntorpecente + 'porção de substância de aspecto incerto e morfologia incomum.';
+      } else if (morfologiaValor.includes('erva')) {
+        descEntorpecente = descEntorpecente + 'própria encerrando porção de fragmentos vegetais ressequidos, constituídos de folhas, folíolos, inflorescências, caules e frutos.';
+      } else if (morfologiaValor === 'pó' || morfologiaValor === 'po') {
+        descEntorpecente = descEntorpecente + 'porção de material sólido particulado.';
+      } else if (morfologiaValor.includes('pedra')) {
+        descEntorpecente = descEntorpecente + 'porção de material sólido petrificado.';
+      } else if (morfologiaValor.includes('haxixe')) {
+        descEntorpecente = descEntorpecente + 'porção de substância de aspecto resinoso de coloração amarronzada e de morfologia irregular.';
+      } else {
+        descEntorpecente = descEntorpecente + morfologia + '.';
+      }
+
+
+      console.log('Descrição do entorpecente:', descEntorpecente);
+
+
+      if (
+        pesoBruto.trim() === "" && 
+        pesoLiquido.trim() === "" && 
+        unidade.trim() === "" &&
+        embalagem.trim() === "" &&
+        morfologia.trim() === "" &&
+        resultado.trim() === ""
+      ) {
+        alert("Preencha ao menos um campo para adicionar o item de entorpecente.");
+        return;
+      }
+
+      entorpecentes.push({
+        id: entorpecenteId++,
+        pesoBruto,
+        pesoLiquido,
+        unidade,
+        embalagem,
+        morfologia,
+        resultado
+      });
+
+      resetEntorpecentesForm();
+      renderEntorpecentes();
+    }
+
+    // Função para alterar um item (preenche o formulário para edição)
+    function alterarEntorpecente(id) {
+      const item = entorpecentes.find(e => e.id === id);
+      if (!item) return;
+      document.getElementById('pesoBruto').value = item.pesoBruto;
+      document.getElementById('pesoLiquido').value = item.pesoLiquido;
+      document.getElementById('unidade').value = item.unidade;
+      document.getElementById('embalagem').value = item.embalagem;
+      document.getElementById('morfologia').value = item.morfologia;
+      document.getElementById('resultado').value = item.resultado;
+
+      // Remove o item para poder sobrescrever ao adicionar novamente
+      entorpecentes = entorpecentes.filter(e => e.id !== id);
+      entorpecenteId--;
+      renderEntorpecentes();
+    }
+
+    // Para coletar os entorpecentes no relatório manual:
+    // Adicione no handleManualForm logicamente se quiser incorporar ao relatório final
+
+    // Torna disponível globalmente para HTML inline usage
+    window.adicionarEntorpecente = adicionarEntorpecente;
+    window.alterarEntorpecente = alterarEntorpecente;
+    window.renderEntorpecentes = renderEntorpecentes;
+  </script>
+
+
+
+  <div id="entorpecentesContainer" class="form-section">
+    <!-- Caixa de texto para extração de informações manual (relatório manual) -->
+    <div class="input-section" style="margin-bottom:18px;">
+      <label for="entorpecenteString"><b>Informe os dados para extração automática:</b></label>
+      <textarea id="entorpecenteString" rows="4" placeholder="Cole aqui o texto contendo as informações dos entorpecentes para extração automática..."></textarea>
+      
+      <button type="button" onclick="extrairEntorpecenteAutomaticamente(document.getElementById('entorpecenteString').value)">Extrair Informações</button>
+    </div>
+    <h3 class="form-section-title">Itens de Entorpecentes</h3>
+    <form id="entorpecenteForm" onsubmit="event.preventDefault();adicionarEntorpecente();">
+      <div class="entorpecente-form-row">
+        <div>
+          <label>Peso Bruto (g):</label>
+          <input type="text" id="pesoBruto" name="pesoBruto" autocomplete="off">
+        </div>
+        <div>
+          <label>Peso Líquido (g):</label>
+          <input type="text" id="pesoLiquido" name="pesoLiquido" autocomplete="off">
+        </div>
+      </div>
+      <div class="entorpecente-form-row">
+        <div>
+          <label>Unidade:</label>
+          <input type="text" id="unidade" name="unidade" autocomplete="off">
+        </div>
+        <div>
+          <label>Embalagem:</label>
+          <input type="text" id="embalagem" name="embalagem" autocomplete="off">
+        </div>
+        <div>
+          <label>Morfologia:</label>
+          <input type="text" id="morfologia" name="morfologia" autocomplete="off">
+        </div>
+        <div>
+          <label>Resultado:</label>
+          <input type="text" id="resultado" name="resultado" autocomplete="off">
+        </div>
+      </div>
+      <button type="button" onclick="adicionarEntorpecente()">Adicionar Item</button>
+    </form>
+    <div id="listaEntorpecentes"></div>
+  </div>
+
+  <script>
+    // Renderiza lista ao carregar
+    window.addEventListener('DOMContentLoaded', renderEntorpecentes);
+  </script>
+  </script>
+</body>
+</html>
